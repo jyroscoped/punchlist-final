@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validPriority(value) {
+      return value in ['low', 'medium', 'high', 'urgent'];
+    }
+
+    function validStatus(value) {
+      return value in ['open', 'done'];
+    }
+
+    match /tasks/{taskId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'title', 'description', 'priority', 'trade', 'zone', 'dueDate',
+          'assignedTo', 'status', 'createdByName', 'createdAt', 'updatedAt', 'createdBy'
+        ])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 300
+        && request.resource.data.zone is string
+        && request.resource.data.zone.size() > 0
+        && request.resource.data.zone.size() <= 60
+        && request.resource.data.assignedTo is string
+        && request.resource.data.assignedTo.size() <= 60
+        && validPriority(request.resource.data.priority)
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'completedAt', 'completedByName', 'updatedAt'
+        ])
+        && validStatus(request.resource.data.status)
+        && request.resource.data.completedByName is string
+        && request.resource.data.completedByName.size() <= 40
+        && request.resource.data.updatedAt is int
+        && (request.resource.data.completedAt == null || request.resource.data.completedAt is int);
+
+      allow delete: if false;
+    }
+
+    match /timeEntries/{entryId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'taskId', 'taskTitle', 'workerName', 'startedAt', 'endedAt',
+          'durationSeconds', 'createdAt', 'userId'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.workerName is string
+        && request.resource.data.workerName.size() > 0
+        && request.resource.data.workerName.size() <= 40
+        && request.resource.data.taskId is string
+        && request.resource.data.taskTitle is string
+        && request.resource.data.taskTitle.size() <= 100
+        && request.resource.data.startedAt is int
+        && request.resource.data.endedAt is int
+        && request.resource.data.durationSeconds is int
+        && request.resource.data.durationSeconds > 0
+        && request.resource.data.durationSeconds <= 86400;
+      allow update, delete: if false;
+    }
+
+    match /activeTimers/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'taskId', 'taskTitle', 'workerName', 'startedAt', 'userId'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.workerName is string
+        && request.resource.data.workerName.size() > 0
+        && request.resource.data.workerName.size() <= 40
+        && request.resource.data.taskId is string
+        && request.resource.data.taskTitle is string
+        && request.resource.data.taskTitle.size() <= 100
+        && request.resource.data.startedAt is int;
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+  }
+}
